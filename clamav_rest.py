@@ -1,3 +1,4 @@
+import json_logging
 import logging
 import sys
 import timeit
@@ -23,8 +24,10 @@ app.registry.register(app.infection_counter)
 app.scan_duration_histogram = Histogram('scan_duration', 'Histogram over virus scan duration.')
 app.registry.register(app.scan_duration_histogram)
 
-logging.basicConfig(stream=sys.stdout, level=app.config['LOGLEVEL'])
+json_logging.init_non_web(enable_json=True)
 logger = logging.getLogger('CLAMAV-REST')
+logger.setLevel(app.config['LOGLEVEL'])
+logger.addHandler(logging.StreamHandler(sys.stdout))
 
 try:
     cd = clamd.ClamdAsyncNetworkSocket(
@@ -70,9 +73,7 @@ async def scan():
 
     _, file_data = list(files.items())[0]
 
-    logger.info('Scanning {file_name}'.format(
-        file_name=file_data.filename
-    ))
+    logger.info(f'Scanning {file_data.filename}', extra={'props': {'stage': 'scanning'}})
 
     start_time = timeit.default_timer()
     try:
@@ -97,14 +98,11 @@ async def scan():
         'time': elapsed
     }
 
-    logger.info(
-            'Scanned {file_name}. Duration: {elapsed}. Infected: {status}'
-            .format(
-                file_name=file_data.filename,
-                elapsed=elapsed,
-                status=response['malware']
-            )
-    )
+    logger.info(f'Scanned {file_data.filename}. Duration: {elapsed}. Infected: {response["malware"]}', extra={'props': {
+        'stage': 'scanned',
+        'scan_duration': elapsed,
+        'infected': response['malware']
+    }})
 
     # metric
     app.scan_counter.inc({'path': '/'})
